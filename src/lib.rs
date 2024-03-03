@@ -1,9 +1,8 @@
 mod sierpinski;
 use std::rc::Rc;
 use std::sync::Mutex;
-use sierpinski::sierpinski;
 use wasm_bindgen::prelude::*;
-use web_sys::{console, window, CanvasRenderingContext2d};
+use web_sys::CanvasRenderingContext2d;
 
 // When the `wee_alloc` feature is enabled, this uses `wee_alloc` as the global
 // allocator.
@@ -35,15 +34,13 @@ pub fn main_js() -> Result<(), JsValue> {
 
         // ok() returns Option and this Option will be accessed though and_then()
         let callback = Closure::once(move || {
-            if let Some(success_tx) = success_tx.lock().ok()
-                .and_then(|mut opt| opt.take()) {
+            if let Some(success_tx) = success_tx.lock().ok().and_then(|mut opt| opt.take()) {
                 success_tx.send(Ok(()));
             }
         });
 
         let error_callback = Closure::once(move |err| {
-            if let Some(error_tx) = error_tx.lock().ok()
-                .and_then(|mut opt| opt.take()) {
+            if let Some(error_tx) = error_tx.lock().ok().and_then(|mut opt| opt.take()) {
                 error_tx.send(Err(err));
             }
         });
@@ -57,7 +54,7 @@ pub fn main_js() -> Result<(), JsValue> {
         success_rx.await;
         context.draw_image_with_html_image_element(&image, 0.0, 0.0);
 
-        sierpinski(
+        sierpinski::sierpinski(
             &context,
             [(300.0, 0.0), (0.0, 600.0), (600.0, 600.0)],
             (0, 255, 0),
