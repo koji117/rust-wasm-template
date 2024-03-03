@@ -42,41 +42,8 @@ pub fn main_js() -> Result<(), JsValue> {
 
     let context = create_context();
 
+    // Spawning the local future
     wasm_bindgen_futures::spawn_local(async move {
-        // Create a channel
-        // The part <Result<(), JsValue>> specifies the type of value that the oneshot channel will transmit.
-        // Result is a type that represents either a success (Ok) or an error (Err).
-        // Here, () (an empty tuple) is used to signify that on success, no value is returned.
-        // JsValue is used in the error case to represent any JavaScript value that could be returned as an error
-        let (success_tx, success_rx) = futures::channel::oneshot::channel::<Result<(), JsValue>>();
-        // Make sure that one thread can access success_tx at a time with Mutex
-        let success_tx = Rc::new(Mutex::new(Some(success_tx)));
-        let error_tx = Rc::clone(&success_tx);
-
-        let image = web_sys::HtmlImageElement::new().unwrap();
-
-        // ok() returns Option and this Option will be accessed though and_then()
-        let callback = Closure::once(move || {
-            if let Some(success_tx) = success_tx.lock().ok().and_then(|mut opt| opt.take()) {
-                success_tx.send(Ok(()));
-            }
-        });
-
-        let error_callback = Closure::once(move |err| {
-            if let Some(error_tx) = error_tx.lock().ok().and_then(|mut opt| opt.take()) {
-                error_tx.send(Err(err));
-            }
-        });
-
-        image.set_onload(Some(callback.as_ref().unchecked_ref()));
-        image.set_onerror(Some(error_callback.as_ref().unchecked_ref()));
-
-        image.set_src("Idle (1).png");
-
-        // Wait draw image until loaded
-        success_rx.await;
-        context.draw_image_with_html_image_element(&image, 0.0, 0.0);
-
         let json = fetch_json("rhb.json")
             .await
             .expect("Could not convert rhb.json into a Sheet struct");
@@ -110,24 +77,39 @@ pub fn main_js() -> Result<(), JsValue> {
         image.set_src("rhb.png");
         success_rx.await;
 
-        let sprite = sheet.frames.get("Run (1).png").expect("Cell not found");
-        context.draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
-            &image,
-            sprite.frame.x.into(),
-            sprite.frame.y.into(),
-            sprite.frame.w.into(),
-            sprite.frame.h.into(),
-            300.0,
-            300.0,
-            sprite.frame.w.into(),
-            sprite.frame.h.into(),
+        // Box<T>: A pointer type for heap allocation. Box allows you to store data on the heap rather than the stack. What remains on the stack is the pointer to the heap data. Using Box is a way to allocate large amounts of data or to keep ownership of data across different parts of your program.
+        // dyn: A keyword used to denote a dynamic dispatch to a trait object. When you use dyn, you're telling Rust that you want to call methods on a type that implements a particular trait, but you're not specifying what the concrete type is. This enables polymorphism in Rust.
+        // FnMut(): A trait bound that specifies the closure or function pointer takes no parameters (()) and returns nothing (()). The FnMut trait is used for closures that might need to mutate their captured variables. It's one of the three "callable" traits, alongside Fn and FnOnce.
+        //  Fn: Requires that the closure does not mutate any captured variables or move out of them and can be called multiple times.
+        //  FnMut: Allows the closure to mutate its captured variables and can be called multiple times.
+        //  FnOnce: Allows the closure to consume (move) its captured variables and can be called only once.
+        //  wrap() requires Box, and there isn't enough information for the compiler to infer the type.
+        let mut frame = -1;
+        let interval_callback = Closure::wrap(Box::new(move || {
+            frame = (frame + 1) % 8;
+            let frame_name = format!("Run ({}).png", frame + 1);
+            context.clear_rect(0.0, 0.0, 600.0, 600.0);
+
+            let sprite = sheet.frames.get(&frame_name).expect("Cell not found");
+            context.draw_image_with_html_image_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                &image,
+                sprite.frame.x.into(),
+                sprite.frame.y.into(),
+                sprite.frame.w.into(),
+                sprite.frame.h.into(),
+                300.0,
+                300.0,
+                sprite.frame.w.into(),
+                sprite.frame.h.into(),
+            );
+        }) as Box<dyn FnMut()>);
+        let window = web_sys::window().unwrap();
+        window.set_interval_with_callback_and_timeout_and_arguments_0(
+            interval_callback.as_ref().unchecked_ref(),
+            50,
         );
-        // sierpinski::sierpinski(
-        //     &context,
-        //     [(300.0, 0.0), (0.0, 600.0), (600.0, 600.0)],
-        //     (0, 255, 0),
-        //     5,
-        // );
+        // Forget the closure that we passed into setInterval so that Rust doesn't destroy it when we leave the scope of this future
+        interval_callback.forget();
     });
 
     Ok(())
