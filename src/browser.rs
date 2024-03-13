@@ -1,8 +1,11 @@
 use anyhow::anyhow;
 use std::future::Future;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::prelude::Closure;
+use wasm_bindgen::{closure::WasmClosureFnOnce, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{CanvasRenderingContext2d, Document, HtmlCanvasElement, Response, Window};
+use web_sys::{
+    CanvasRenderingContext2d, Document, HtmlCanvasElement, HtmlImageElement, Response, Window,
+};
 macro_rules! log {
     ( $( $t:tt )* ) => {
         web_sys::console::log_1(&format!( $( $t )*).into());
@@ -66,4 +69,18 @@ pub async fn fetch_json(json_path: &str) -> Result<JsValue, anyhow::Error> {
     )
     .await
     .map_err(|err| anyhow!("error fetching JSON {:#?}", err))
+}
+
+pub fn new_image() -> Result<HtmlImageElement, anyhow::Error> {
+    HtmlImageElement::new().map_err(|err| anyhow!("Could not create HtmlImageElement: {:#?}", err))
+}
+
+// FnMut: Allows the closure to mutate the captured variables,
+// meaning it can change the state of the environment.
+// However, because of the potential mutation, access to the closure might be restricted to ensure safety, especially in concurrent scenarios.
+pub fn closure_once<F, A, R>(fn_once: F) -> Closure<F::FnMut>
+where
+    F: 'static + WasmClosureFnOnce<A, R>,
+{
+    Closure::once(fn_once)
 }

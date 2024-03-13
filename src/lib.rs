@@ -1,6 +1,7 @@
 mod sierpinski;
 #[macro_use]
 mod browser;
+mod engine;
 
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -51,31 +52,9 @@ pub fn main_js() -> Result<(), JsValue> {
             .into_serde()
             .expect("Could not convert rhb.json into a Sheet struct");
 
-        let (success_tx, success_rx) = futures::channel::oneshot::channel::<Result<(), JsValue>>();
-        // Make sure that one thread can access success_tx at a time with Mutex
-        let success_tx = Rc::new(Mutex::new(Some(success_tx)));
-        let error_tx = Rc::clone(&success_tx);
-
-        let image = web_sys::HtmlImageElement::new().unwrap();
-
-        // ok() returns Option and this Option will be accessed though and_then()
-        let callback = Closure::once(move || {
-            if let Some(success_tx) = success_tx.lock().ok().and_then(|mut opt| opt.take()) {
-                success_tx.send(Ok(()));
-            }
-        });
-
-        let error_callback = Closure::once(move |err| {
-            if let Some(error_tx) = error_tx.lock().ok().and_then(|mut opt| opt.take()) {
-                error_tx.send(Err(err));
-            }
-        });
-
-        image.set_onload(Some(callback.as_ref().unchecked_ref()));
-        image.set_onerror(Some(error_callback.as_ref().unchecked_ref()));
-
-        image.set_src("rhb.png");
-        success_rx.await;
+        let image = engine::load_image("rhb.png")
+            .await
+            .expect("Could not load rhb.png");
 
         // Box<T>: A pointer type for heap allocation. Box allows you to store data on the heap rather than the stack. What remains on the stack is the pointer to the heap data. Using Box is a way to allocate large amounts of data or to keep ownership of data across different parts of your program.
         // dyn: A keyword used to denote a dynamic dispatch to a trait object. When you use dyn, you're telling Rust that you want to call methods on a type that implements a particular trait, but you're not specifying what the concrete type is. This enables polymorphism in Rust.
