@@ -1,13 +1,14 @@
-mod r#fetch;
 mod sierpinski;
+#[macro_use]
+mod browser;
 
 use std::rc::Rc;
 use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
-use web_sys::CanvasRenderingContext2d;
 
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::future::Future;
 
 #[derive(Deserialize)]
 struct Rect {
@@ -40,14 +41,13 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 pub fn main_js() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
 
-    let context = create_context();
+    let context = browser::context().expect("Could not get context");
 
     // Spawning the local future
-    wasm_bindgen_futures::spawn_local(async move {
-        let json = fetch_json("rhb.json")
+    browser::spawn_local(async move {
+        let sheet: Sheet = browser::fetch_json("rhb.json")
             .await
-            .expect("Could not convert rhb.json into a Sheet struct");
-        let sheet: Sheet = json
+            .expect("Could not convert rhb.json into a Sheet struct")
             .into_serde()
             .expect("Could not convert rhb.json into a Sheet struct");
 
@@ -103,7 +103,7 @@ pub fn main_js() -> Result<(), JsValue> {
                 sprite.frame.h.into(),
             );
         }) as Box<dyn FnMut()>);
-        let window = web_sys::window().unwrap();
+        let window = browser::window().expect("No Window Found");
         window.set_interval_with_callback_and_timeout_and_arguments_0(
             interval_callback.as_ref().unchecked_ref(),
             50,
@@ -113,30 +113,4 @@ pub fn main_js() -> Result<(), JsValue> {
     });
 
     Ok(())
-}
-
-fn create_context() -> CanvasRenderingContext2d {
-    let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-    let canvas = document
-        .get_element_by_id("canvas")
-        .unwrap()
-        .dyn_into::<web_sys::HtmlCanvasElement>()
-        .unwrap();
-
-    let context = canvas
-        .get_context("2d")
-        .unwrap()
-        .unwrap()
-        .dyn_into::<web_sys::CanvasRenderingContext2d>()
-        .unwrap();
-    context
-}
-
-async fn fetch_json(json_path: &str) -> Result<JsValue, JsValue> {
-    let window = web_sys::window().unwrap();
-    let resp_value = wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(json_path)).await?;
-    let resp: web_sys::Response = resp_value.dyn_into()?;
-
-    wasm_bindgen_futures::JsFuture::from(resp.json()?).await
 }
