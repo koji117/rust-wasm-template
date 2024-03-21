@@ -1,7 +1,8 @@
 use anyhow::anyhow;
 use std::future::Future;
-use wasm_bindgen::prelude::Closure;
+use wasm_bindgen::prelude::*;
 use wasm_bindgen::{closure::WasmClosureFnOnce, JsCast, JsValue};
+use wasm_bindgen::closure::WasmClosure;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     CanvasRenderingContext2d, Document, HtmlCanvasElement, HtmlImageElement, Response, Window,
@@ -84,3 +85,31 @@ where
 {
     Closure::once(fn_once)
 }
+
+
+pub type LoopClosure = Closure<dyn FnMut(f64)>;
+pub fn request_animation_frame(callback: &LoopClosure) -> Result<i32, anyhow::Error> {
+    window()?
+        .request_animation_frame(callback.as_ref().unchecked_ref())
+        .map_err(|err| anyhow!("Cannot request animation frame {:#?}", err))
+}
+
+// f: impl FnMut() means it can be called multiple times and may mutate its captured variables.
+// Use 'static to allow the closure to safely outlive the call to create_raf_closure
+pub fn create_raf_closure(f: impl FnMut(f64) + 'static) -> LoopClosure {
+    // By moving a closure to the heap (in other word, by using Box),
+    // (1) ensure that it has a 'static lifetime, allowing it to live as long as needed, regardless of the original scope.
+    // (2) allow for dynamic dispatch, where the exact type of the boxed value can vary at runtime as long as it implements the specified trait, in this case FnMut(f64)
+    closure_wrap(Box::new(f))
+}
+
+// T must implement the WasmClosure trait. The + ?Sized part means that T can also be a dynamically sized type.
+pub fn closure_wrap<T: WasmClosure + ?Sized>(data: Box<T>) -> Closure<T> {
+    Closure::wrap(data)
+}
+
+
+
+
+
+
